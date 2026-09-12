@@ -79,7 +79,14 @@ export function parseAgencyInvocation(rawInput) {
 }
 
 /**
- * Render the inventory: departments with counts, then the curated squads.
+ * Render the inventory: a self-sufficient headline, then departments and squads.
+ *
+ * The headline carries the counts and the two other commands, because the chat
+ * shell renders a command result as a **collapsed one-line row** — only the first
+ * line is visible until the user expands it. A headline reading "# 专家团" tells
+ * the reader nothing they did not already know from typing the command, so the
+ * summary line is the whole design problem here.
+ *
  * @param {import('./roster.js').Roster} roster - the index.
  * @returns {string} the command output.
  */
@@ -87,9 +94,17 @@ export function renderInventory(roster) {
   const departments = roster.departments
     .map((department) => ({ department, count: roster.inDepartment(department).length }))
     .filter((entry) => entry.count > 0)
-  const lines = [`# 专家团 · ${roster.size} 位专家 · ${departments.length} 个部门`, '']
-  lines.push(departments.map((entry) => `${DEPARTMENT_LABELS[entry.department] ?? entry.department} ${entry.department}(${entry.count})`).join(' · '))
-  lines.push('', `## 编队剧本（${SQUADS.length} 套）`, '')
+  const lines = [
+    `${roster.size} 位专家 · ${departments.length} 个部门 · ${SQUADS.length} 套编队。检索：\`/${AGENCY_COMMAND} 找 <需求>\`；委托：\`/${AGENCY_COMMAND} 用 <角色> <任务>\`。`,
+    '',
+    '## 部门（人数）',
+    departments
+      .map((entry) => `${DEPARTMENT_LABELS[entry.department] ?? entry.department} ${entry.department}(${entry.count})`)
+      .join(' · '),
+    '',
+    `## 编队剧本（${SQUADS.length} 套）`,
+    '',
+  ]
   for (const squad of SQUADS) {
     lines.push(`- **${squad.name}**（${squad.scale}）— ${squad.when}`)
   }
@@ -104,7 +119,14 @@ export function renderInventory(roster) {
 }
 
 /**
- * Render search hits.
+ * Render search hits: the best match leads, because it is the only line a
+ * collapsed result row shows.
+ *
+ * Ranking stays whatever `agency_find` uses — this renderer adds no scoring of
+ * its own, so a hit here and a hit from the tool can never disagree about who
+ * the best candidate is. Only the presentation differs: the top match's id and
+ * name are promoted into the headline, and the rest follow as a list.
+ *
  * @param {import('./roster.js').Roster} roster - the index.
  * @param {string} need - the natural-language need.
  * @returns {string} the command output.
@@ -115,12 +137,16 @@ export function renderSearch(roster, need) {
   if (hits.length === 0) {
     return `没有匹配「${need}」的角色。试试更短的关键词，或用 \`/${AGENCY_COMMAND}\` 看部门清单。`
   }
-  const lines = [`# 匹配「${need}」的角色（${hits.length}）`, '']
-  for (const hit of hits) {
+  const best = hits[0]
+  const lines = [
+    `最匹配「${need}」的是 \`${best.role.id}\`（${best.role.name}），共 ${hits.length} 个候选：`,
+    '',
+  ]
+  hits.forEach((hit, index) => {
     const reason = hit.reasons.length > 0 ? ` — ${hit.reasons.join('；')}` : ''
-    lines.push(`- \`${hit.role.id}\`（${hit.role.name}）${reason}`)
-    if (hit.role.description.length > 0) lines.push(`  ${hit.role.description}`)
-  }
+    lines.push(`${index + 1}. \`${hit.role.id}\`（${hit.role.name}）${reason}`)
+    if (hit.role.description.length > 0) lines.push(`   ${hit.role.description}`)
+  })
   lines.push('', `确定后：\`/${AGENCY_COMMAND} 用 <角色 id> <任务>\`。`)
   return lines.join('\n')
 }
@@ -140,8 +166,13 @@ export function renderSearch(roster, need) {
  */
 export function renderDelegationInstruction(role, task, toolNames) {
   return [
-    `请把下面这件事交给专家 ${role.name}（\`${role.id}\`）：用 ${toolNames.run} 以他的专业人设启动子代理完成。`,
-    `角色与任务的匹配已经由用户指定，不要再改成别人；如果不确定他的职责边界，先用 ${toolNames.brief} 看一眼。`,
+    `用户已经指定了专家：**${role.name}**（\`${role.id}\`）。请立刻用 ${toolNames.run} 以他的专业人设启动子代理去完成下面的任务。`,
+    '',
+    '要求：',
+    `- **必须**调用 ${toolNames.run} 把任务交给这位专家，**不要自己动手**：不要自己读文件、不要自己写代码或写报告来替代他。`,
+    '- 不要换人：角色是用户选的，不是你来判断的。',
+    `- 拿不准他的职责边界时，先用 ${toolNames.brief} 看一眼，然后再委托。`,
+    `- 任务描述要自包含（子代理看不到本会话）：把背景、输入、产出要求、验收标准一并写进 ${toolNames.run} 的 task。`,
     '',
     '## 任务',
     task,
@@ -235,8 +266,8 @@ export function registerAgencyCommand(ctx, deps) {
                   return {
                     kind: 'success',
                     text:
-                      `已指定 ${role.name}（\`${role.id}\`），主代理会据此委托。` +
-                      (attachments.length > 0 ? `随附 ${attachments.length} 个附件已一并交给它。` : ''),
+                      `已指定 ${role.name}（\`${role.id}\`），正在委托——主代理会启动子代理，结果稍后出现。` +
+                      (attachments.length > 0 ? `随附 ${attachments.length} 个附件一并交给它。` : ''),
                   }
                 }
                 /* v8 ignore next 2 -- the union above is closed and every member is handled */

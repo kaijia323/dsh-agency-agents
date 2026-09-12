@@ -110,6 +110,28 @@ test('a bare invocation renders the inventory and never touches the model', asyn
   assert.equal(agent.submitted.length, 0, 'an inventory is not a delegation')
 })
 
+// The shell renders a command result as a collapsed row: only the first line is
+// visible until expanded. A headline of "# 专家团" would therefore tell the
+// reader nothing, so the first line has to carry the counts and the next step.
+test('the inventory headline is self-sufficient when collapsed', async () => {
+  const { command } = await mount()
+  const headline = command.handler(invoke(fakeAgent(), '')).text.split('\n')[0]
+  assert.equal(headline.includes('277 位专家'), true, 'the counts are on the visible line')
+  assert.equal(headline.includes('20 个部门'), true)
+  assert.equal(headline.includes('/agency-agents 找'), true, 'so is how to search')
+  assert.equal(headline.includes('/agency-agents 用'), true, 'and how to delegate')
+  assert.equal(headline.length < 110, true, `headline should stay scannable, got ${headline.length}`)
+})
+
+test('the search headline names the top hit so the collapsed row is actionable', async () => {
+  const { command } = await mount()
+  const text = command.handler(invoke(fakeAgent(), ' 找 代码审查')).text
+  const headline = text.split('\n')[0]
+  assert.equal(headline.includes('最匹配'), true)
+  assert.equal(headline.includes('engineering-code-reviewer'), true, 'the best candidate is visible without expanding')
+  assert.equal(text.includes('1. `engineering-code-reviewer`'), true, 'and the list still ranks it first')
+})
+
 test('a search renders hits with role ids', async () => {
   const { command } = await mount()
   const agent = fakeAgent()
@@ -144,6 +166,21 @@ test('naming an expert submits a delegation instruction to the model', async () 
   assert.equal(text.includes('engineering-code-reviewer'), true)
   assert.equal(text.includes('agency_run'), true, 'it names the tool to call')
   assert.equal(text.includes('审查 auth.ts 的会话校验'), true, 'the task passes through verbatim')
+})
+
+// The first version of this instruction was polite ("请把这件事交给专家…"),
+// and a model read it as advice and started doing the work itself — a user's
+// complaint that the command "did not start a subagent". The wording is now a
+// constraint, and the prohibition is the part that was missing.
+test('the delegation instruction is a constraint, not advice', async () => {
+  const { command } = await mount()
+  const agent = fakeAgent()
+  command.handler(invoke(agent, ' 用 engineering-code-reviewer 审查 auth.ts'))
+  const text = agent.submitted[0].content[0].text
+  assert.equal(text.includes('必须'), true, 'it says the tool call is mandatory')
+  assert.equal(text.includes('不要自己动手'), true, 'and forbids doing the work instead')
+  assert.equal(text.includes('不要换人'), true, 'the human chose the expert, not the model')
+  assert.equal(text.includes('子代理看不到本会话'), true, 'it reminds the model to write a self-contained task')
 })
 
 test('a Chinese role name works as the employee, same as the tool accepts', async () => {
