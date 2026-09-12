@@ -102,21 +102,24 @@ const CSS = `
 `
 
 /**
- * Register the 专家团 page.
+ * Register the 专家团 page and return its disposer.
  *
- * `slots.inject` waits for the shell to declare `settings.section`, so the page
- * does not depend on mount order; the disposer belongs to the calling fiber, so
- * stopping or updating the Package removes the page and its styles with it.
+ * Deliberately a plain function rather than something that reaches for harness
+ * client services: the published bundle is generated from this module by
+ * `tools/build-client.mjs`, and inside that bundle the factory receives no
+ * `ctx`-bound helpers beyond the page's own globals. `slots.inject` waits for the
+ * shell to declare `settings.section`, so the page never depends on mount order,
+ * and the returned disposer removes it with the plugin.
  * @param {object} ctx - the Client context.
+ * @returns {(() => void) | undefined} the slot disposer, or undefined when no slots service is mounted.
  */
 export function registerSettingsPage(ctx) {
   const slots = ctx.get('slots')
   if (slots === undefined) {
     console.error('agency-agents: slots service unavailable; the 专家团 page was not registered')
-    return
+    return undefined
   }
-  ctx.effect(() => styles.insert(CSS), 'agency-agents:settings-css')
-  slots.inject('settings.section', () =>
+  return slots.inject('settings.section', () =>
     slots.register({ name: 'settings.section', id: 'agency-agents', order: 30, label: '专家团' }, () =>
       React.createElement(AgencyPage, null),
     ),
@@ -130,6 +133,16 @@ function AgencyPage() {
   const [need, setNeed] = React.useState('')
   const [department, setDepartment] = React.useState('')
   const [openSquad, setOpenSquad] = React.useState('')
+
+  React.useEffect(() => {
+    // The bundle has no `styles` builtin, so the page owns its own <style>.
+    const style = document.createElement('style')
+    style.textContent = CSS
+    document.head.appendChild(style)
+    return () => {
+      style.remove()
+    }
+  }, [])
 
   React.useEffect(() => {
     let live = true

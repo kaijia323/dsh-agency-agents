@@ -104,7 +104,17 @@ dsh plugin --profile web remove dsh-agency-agents     # 工具、提示段、设
 
 宿主组合里已有的 `subagent` / `subagent-spawn-in-process` / `tool-jobs` 行保持不变即可。
 
-`dsh.client` 声明了浏览器包，所以「专家团」页随同一行一起上架；目前是**未打包的 ESM 源码**（`./client` → `src/client.js`，刻意不 import 任何东西，因此宿主可以直接把它作为 bundle 提供）。如果将来加了依赖，再引入打包步骤。
+`dsh.client` 声明了浏览器包，所以「专家团」页随同一行一起上架。
+
+客户端入口是**生成物** `lib/client.js`（由 `src/client.js` + `tools/build-client.mjs` 生成，`npm run build:client`）。这不是打包偏好，而是硬契约：宿主把每个客户端插件当 **classic script** 加载，脚本必须自注册 ——
+
+```js
+window.__ModuleLoader__.load({ id: "…", factory: (require) => { … return module.exports } })
+```
+
+且返回的 exports 要带 Cordis 插件形状（`apply`、`inject`）。裸 ESM 能正常求值却**什么都不注册**，宿主会报 `loaded without registering "…" via __ModuleLoader__.load`，并连带把同一条 combo 里所有内建 UI 插件一起弄挂 —— 整个设置面板消失。我们**正好踩过这个坑**（v0.1.1），所以 `test/client-bundle.test.js` 会在沙箱里真实执行生成物，断言它完成注册、`apply` 把页面挂进 `settings.section`。
+
+页面本身仍然零 import：React 来自宿主的冻结模块表，`require` 用不上，样式由页面自己用 `document` 注入并随卸载移除。
 
 ### 本地开发
 
@@ -194,6 +204,7 @@ npm test               # 97 项断言：解析 / 索引 / 目录 / 转义 / 剧�
 node tools/audit.mjs   # 语料与成本的实测报告（角色数、目录开销、需转义的文件、剧本清单）
 node tools/vendor.mjs --from <checkout|git URL>   # 刷新随包快照并更新 data/VENDOR.md
 npm run emit-eval      # 重新生成 tmp/agency-core.mjs（会话内验证用，不随包发布）
+npm run build:client   # 由 src/client.js 生成 lib/client.js（改完客户端页面必须跑）
 ```
 
 目录结构：
