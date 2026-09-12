@@ -74,5 +74,13 @@
       "platform": "web",
       "inject": []
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/kaijia323/dsh-agency-agents.git"
+  },
+  "homepage": "https://github.com/kaijia323/dsh-agency-agents#readme",
+  "bugs": {
+    "url": "https://github.com/kaijia323/dsh-agency-agents/issues"
   }
 }
