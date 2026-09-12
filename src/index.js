@@ -30,7 +30,6 @@ import { catalogSectionText, createTools } from './tools.js'
 import { PLAYBOOKS } from './playbook.js'
 import { estimateCatalog } from './catalog.js'
 import { checkProvider } from './delegation.js'
-import { SETTINGS_PAYLOAD_VERSION, settingsPayload } from './settings.js'
 import { registerSettingsPage } from './client.js'
 
 /** Plugin name shown in loader diagnostics. */
@@ -101,7 +100,6 @@ export function resolveConfig(raw = {}) {
       requirePersonaCapability: raw.delegation?.requirePersonaCapability ?? true,
     },
     playbook: { enabled: raw.playbook?.enabled ?? true, maxChars: raw.playbook?.maxChars ?? 24000 },
-    ui: { settingsPage: raw.ui?.settingsPage ?? true },
     tools,
     logRosterSummary: raw.logRosterSummary ?? true,
   }
@@ -162,31 +160,6 @@ export async function apply(ctx, rawConfig) {
   // the payload server-side keeps the browser free of a second copy of the role
   // library: the host already indexed it, and the client gets exactly the fields
   // the page renders.
-  //
-  // The RPC helper is a Host builtin of the dynamic runner and also exists on a
-  // deployment's global scope; resolve it rather than assuming either, so the
-  // same source mounts from a package row and from a dynamic Package.
-  const rpc = ctx.get('harness') ?? (typeof harness === 'undefined' ? undefined : harness)
-  if (config.ui.settingsPage && rpc === undefined) {
-    logger?.warn?.('agency-agents: no Host RPC helper is available, so the 专家团 settings page will have no data')
-  }
-  if (config.ui.settingsPage && rpc !== undefined) {
-    const payload = settingsPayload(roster, {
-      toolNames: config.tools,
-      source: config.roster.source,
-      catalogMode: config.catalog.mode,
-    })
-    ctx.effect(
-      () =>
-        rpc.handle('agency/settings', () => {
-          // A fresh reference per call: the handler's reply is JSON-encoded, and
-          // handing out the same mutable object invites a consumer to edit it.
-          return JSON.parse(JSON.stringify(payload))
-        }),
-      'agency-agents:settings-rpc',
-    )
-  }
-
   if (config.logRosterSummary) {
     const estimate = estimateCatalog(roster, config.catalog.mode)
     logger?.info?.(
@@ -213,7 +186,6 @@ export function applyClient(ctx) {
   registerSettingsPage(ctx)
 }
 
-export { SETTINGS_PAYLOAD_VERSION, settingsPayload }
 export { registerSettingsPage }
 
 /**

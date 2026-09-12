@@ -27,7 +27,7 @@ const BUNDLE = resolve(ROOT, 'lib/client.js')
 /**
  * Run the bundle as the browser would: a classic script whose only entry point
  * is the module loader it registers with.
- * @returns {{ id: string, exports: object, registered: object[], calls: string[], resolved: object }}
+ * @returns {{ id: string, exports: object, registered: object[], calls: string[], resolved: object, required: string[] }}
  */
 async function runBundle() {
   const code = await readFile(BUNDLE, 'utf8')
@@ -57,7 +57,10 @@ async function runBundle() {
       if (typeof cleanup === 'function') cleanup()
     },
   }
+  // The bundle declares `slots` in its inject, so Cordis guarantees the service
+  // is present on the context by the time apply runs.
   const ctx = {
+    slots,
     get: (name) => (name === 'slots' ? slots : undefined),
     effect: (callback) => callback(),
   }
@@ -79,13 +82,6 @@ async function runBundle() {
       head: { appendChild: () => { styleCount += 1; resolved.styleInserts = (resolved.styleInserts ?? 0) + 1 } },
     },
     navigator: { clipboard: { writeText: async () => {} } },
-    host: {
-      call: async (method) => {
-        resolved.hostCall += 1
-        calls.push(`host.call:${method}`)
-        return { roles: [], departments: [], squads: [], tools: {}, source: 'builtin', catalogMode: 'compact' }
-      },
-    },
     console: { log: () => {}, error: () => {} },
   }
   vm.createContext(sandbox)
@@ -93,10 +89,15 @@ async function runBundle() {
 
   assert.equal(loaded.length, 1, 'the bundle registered exactly one module')
   const descriptor = loaded[0]
-  const exports = descriptor.factory(() => {
-    throw new Error('the bundle must not require anything: it is served without a module table')
+  const required = []
+  const exports = descriptor.factory((specifier) => {
+    required.push(specifier)
+    // The shell resolves bare specifiers from its frozen module table; `react` is
+    // the only one this bundle may ask for.
+    if (specifier === 'react') return React
+    throw new Error(`the bundle required an unexpected module: ${specifier}`)
   })
-  return { id: descriptor.id, exports, registered: registrations, styleCount, calls, ctx, resolved }
+  return { id: descriptor.id, exports, registered: registrations, calls, ctx, resolved, required }
 }
 
 
@@ -130,7 +131,8 @@ test('the factory returns a Cordis plugin the shell can apply', async () => {
   // Cross-realm: an array built inside the vm context is not deep-equal to one
   // built here, so compare its contents rather than its identity.
   assert.equal(Array.isArray(bundle.exports.inject), true)
-  assert.equal(bundle.exports.inject.length, 0, 'the page needs no other client plugin')
+  assert.equal(bundle.exports.inject.length, 1)
+  assert.equal(bundle.exports.inject[0], 'slots', 'the slot system must be present before apply runs')
 })
 
 test('applying the plugin registers the 专家团 page into settings.section', async () => {
@@ -147,19 +149,53 @@ test('applying the plugin registers the 专家团 page into settings.section', a
   assert.deepEqual(bundle.calls.filter((call) => call.startsWith('inject:')), ['inject:settings.section'])
 })
 
-test('rendering the page fetches its payload over the package RPC and owns its styles', async () => {
+test('rendering the page uses the inlined roster and owns its styles', async () => {
   const bundle = await runBundle()
   bundle.exports.apply(bundle.ctx)
-  const component = bundle.registered[0].component
-  renderAgencyPage(component)
-  // The fetch is a promise; give it a turn to settle before reading the log.
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.equal(bundle.calls.includes('host.call:agency/settings'), true, `the page asks the Host half for its data (saw ${bundle.calls.join(', ')})`)
-  // The stub runs each effect's cleanup immediately, so the page both installed
-  // its <style> and removed it — which is the property under test: the page owns
-  // the element's full lifecycle rather than leaking it.
+  const rendered = renderAgencyPage(bundle.registered[0].component)
+  // The page has no RPC to call: a packaged client half carries its own data, and
+  // the rendered tree must reflect the inlined roster rather than an empty shell.
+  const text = JSON.stringify(rendered)
+  assert.equal(text.includes('位专家'), true, 'the header reports the roster size')
+  assert.equal(text.includes('专家名录'), true, 'the experts tab is the default view')
+  // The stub runs each effect's cleanup immediately, so the page installed its
+  // <style> and removed it — the page owns the element's lifecycle.
   assert.equal(bundle.resolved.styleInserts, 1, `the page installs exactly one <style> (calls: ${bundle.calls.join(', ')})`)
   assert.equal(bundle.resolved.styleRemovals, 1, 'and releases it on unmount')
+})
+
+test('the bundle inlines the roster rather than asking the Host for it', async () => {
+  const code = await readFile(BUNDLE, 'utf8')
+  // Slice rather than regex: the inlined JSON is large and may contain braces.
+  const OPEN = 'const __AGENCY_ROSTER__ = '
+  const from = code.indexOf(OPEN)
+  assert.notEqual(from, -1, 'the roster constant is emitted')
+  // One line of JSON follows the marker; parse exactly that line so nothing else
+  // in the envelope (comments included) can be mistaken for data.
+  const line = code.slice(from + OPEN.length).split('\n')[0]
+  const roster = JSON.parse(line)
+  assert.equal(roster.roles.length, 277, 'every role is inlined')
+  assert.equal(roster.departments.length, 20)
+  assert.equal(roster.squads.length, 14)
+  assert.equal(roster.tools.run, 'agency_run', 'the page shows the real tool names')
+  // No RPC surface may survive: a packaged client half cannot reach one. Prose
+  // in the generated header mentions the name, so check executable code only.
+  const codeLines = code.split('\n').filter((line) => !/^\s*(\/\*|\*|\/\/)/.test(line))
+  assert.equal(codeLines.some((line) => line.includes('host.call')), false, 'the page must not depend on the dynamic runner RPC')
+})
+
+test('the bundle resolves React through the module table, not as a global', async () => {
+  const bundle = await runBundle()
+  bundle.exports.apply(bundle.ctx)
+  renderAgencyPage(bundle.registered[0].component)
+  // The factory resolves React itself; a bundle that instead reads a global
+  // React renders "React is not defined" inside the slot.
+  assert.equal(bundle.required.includes('react'), true, `expected require("react"), saw [${bundle.required.join(', ')}]`)
+  assert.deepEqual(
+    [...new Set(bundle.required)],
+    ['react'],
+    'the page must ask for nothing else from the module table',
+  )
 })
 
 test('the bundle carries no ES module syntax', async () => {

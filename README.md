@@ -29,7 +29,7 @@
 - **专家名录**：277 位专家按 20 个部门分组，带 emoji、中文名、角色 id、一句话职责；支持关键词搜索与部门筛选；点角色 id 可复制。
 - **编队剧本**：NEXUS 手册里真实部署过的 14 套编队（定向任务 Micro 配置、阶段门禁守门人、阶段 3 四条并行轨道、评审加固、高频单点专家），每套给出适用场景、成员分工与守门人；点成员名直接跳到名录里查这位专家。
 
-页面是**只读**的：没有可配置项，因此不会与"模型实际能调用什么"脱节。它通过一条 Package 私有 RPC（`agency/settings`）取数据，浏览器不需要第二份角色库副本。
+页面是**只读**的：没有可配置项，因此不会与"模型实际能调用什么"脱节。数据由构建时**内联进 bundle**（构建脚本读的就是 Host 索引的同一份语料），页面因此不需要任何 RPC —— 常驻客户端包用不了动态 runner 的 `host.call`，而注册 remote 服务属于 host 组合的改动，超出这个插件该动的范围。
 
 > 注意：这一页是**安装后**才有的常驻能力。当前会话里我另外挂了一个临时动态 Package 做预览，它需要你在 Run 卡片上批准；两者互不影响，你也可以直接拒绝它、改用安装路径。
 
@@ -114,7 +114,13 @@ window.__ModuleLoader__.load({ id: "…", factory: (require) => { … return mod
 
 且返回的 exports 要带 Cordis 插件形状（`apply`、`inject`）。裸 ESM 能正常求值却**什么都不注册**，宿主会报 `loaded without registering "…" via __ModuleLoader__.load`，并连带把同一条 combo 里所有内建 UI 插件一起弄挂 —— 整个设置面板消失。我们**正好踩过这个坑**（v0.1.1），所以 `test/client-bundle.test.js` 会在沙箱里真实执行生成物，断言它完成注册、`apply` 把页面挂进 `settings.section`。
 
-页面本身仍然零 import：React 来自宿主的冻结模块表，`require` 用不上，样式由页面自己用 `document` 注入并随卸载移除。
+另外三条同样是实测踩出来的契约，测试逐个断言：
+
+- **React 走模块表**：工厂里 `require("react")`。runner 只把 `React` 注入**动态**半区，常驻 bundle 里当全局读会抛 `React is not defined`。
+- **`inject` 必须声明 `slots`**：否则 `apply` 可能在 slot 系统挂载前就跑，静默什么都不注册。
+- **没有 `host.call`**：那是动态 runner 的私有 RPC，常驻客户端包够不着 —— 所以数据构建时内联。
+
+样式由页面自己用 `document` 注入并随卸载移除（bundle 里也没有 `styles` builtin）。
 
 ### 本地开发
 

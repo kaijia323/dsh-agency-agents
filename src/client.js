@@ -8,18 +8,26 @@
  *
  * Two properties are deliberate:
  *
- * - **No imports.** This module is also the browser bundle, and the harness
- *   resolves a client bundle against a frozen module table (React, Cordis, and
- *   static UI libraries). Keeping it import-free means the bundle needs no
- *   bundler and no external declarations — the only runtime values it uses are
- *   the Client builtins `React`, `styles`, `host`, and `console`. The squad
- *   catalog is therefore inline; `test/squads.test.js` asserts it stays
- *   identical to `src/squads.js`, which is what the Host half ships.
+ * - **No imports, no RPC.** A client bundle is a classic script whose factory
+ *   receives nothing but a `require` for the shell's frozen module table, and
+ *   `host.call` — the Package-private RPC the dynamic runner injects — does not
+ *   exist for a packaged client half. The page therefore carries its own data:
+ *   `tools/build-client.mjs` reads the roster at build time and inlines it as
+ *   `__AGENCY_ROSTER__`. That keeps the page self-sufficient and removes a whole
+ *   class of "undefined global" failures at the slot boundary.
  * - **Read-only.** There is no setting to change, so nothing here can drift out
  *   of sync with what the model is actually able to call.
  *
  * @module dsh-agency-agents/client
  */
+
+/**
+ * The roster, inlined by `tools/build-client.mjs` at build time.
+ *
+ * The bundle defines a global; a plain `node --test` run has nothing, so the
+ * source file carries an empty default and the bundle tests read the real one.
+ */
+const ROSTER = typeof __AGENCY_ROSTER__ === 'undefined' ? { roles: [], departments: [], squads: [] } : __AGENCY_ROSTER__
 
 /** CSS class prefix, so the page's styles cannot collide with the shell's. */
 const P = 'dsa'
@@ -111,14 +119,13 @@ const CSS = `
  * shell to declare `settings.section`, so the page never depends on mount order,
  * and the returned disposer removes it with the plugin.
  * @param {object} ctx - the Client context.
- * @returns {(() => void) | undefined} the slot disposer, or undefined when no slots service is mounted.
+ * @returns {() => void} the slot disposer.
  */
 export function registerSettingsPage(ctx) {
-  const slots = ctx.get('slots')
-  if (slots === undefined) {
-    console.error('agency-agents: slots service unavailable; the 专家团 page was not registered')
-    return undefined
-  }
+  // The bundle declares `slots` in its `inject`, so Cordis applies this plugin
+  // only once the slot system exists; reaching here without it is a defect, not
+  // a state to tolerate quietly.
+  const slots = ctx.slots
   return slots.inject('settings.section', () =>
     slots.register({ name: 'settings.section', id: 'agency-agents', order: 30, label: '专家团' }, () =>
       React.createElement(AgencyPage, null),
@@ -126,9 +133,8 @@ export function registerSettingsPage(ctx) {
   )
 }
 
-/** The page: one RPC fetch, then two tabs over the same payload. */
+/** The page: one inlined payload, two tabs over it. */
 function AgencyPage() {
-  const [state, setState] = React.useState({ phase: 'loading', data: null, error: '' })
   const [tab, setTab] = React.useState('experts')
   const [need, setNeed] = React.useState('')
   const [department, setDepartment] = React.useState('')
@@ -144,39 +150,20 @@ function AgencyPage() {
     }
   }, [])
 
-  React.useEffect(() => {
-    let live = true
-    host.call('agency/settings', null).then(
-      (data) => {
-        if (live) setState({ phase: 'ready', data: data, error: '' })
-      },
-      (error) => {
-        if (live) setState({ phase: 'failed', data: null, error: String((error && error.message) || error) })
-      },
-    )
-    return () => {
-      live = false
-    }
-  }, [])
-
-  if (state.phase === 'loading') {
-    return React.createElement('div', { className: `${P}-page` }, React.createElement('div', { className: `${P}-empty` }, '正在读取专家库…'))
-  }
-  if (state.phase === 'failed') {
-    return React.createElement(
-      'div',
-      { className: `${P}-page` },
-      React.createElement('div', { className: `${P}-err` }, `读取专家库失败：${state.error}`),
-      React.createElement('div', { className: `${P}-sub` }, '请确认 dsh-agency-agents 的 Host 行已加载（设置 → 插件）。'),
-    )
-  }
-
-  const data = state.data
+  const data = ROSTER
   const roles = data.roles || []
   const squads = data.squads || []
   const departments = data.departments || []
   const names = {}
   for (const role of roles) names[role.id] = role
+
+  if (roles.length === 0) {
+    return React.createElement(
+      'div',
+      { className: `${P}-page` },
+      React.createElement('div', { className: `${P}-err` }, '专家库数据缺失：本页的数据由构建时内联，请运行 npm run build:client 重新生成 lib/client.js。'),
+    )
+  }
 
   const needle = need.trim().toLowerCase()
   const visible = roles.filter((role) => {
