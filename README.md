@@ -66,8 +66,7 @@ dsh plugin --profile web add github:kaijia323/dsh-agency-agents#v0.1.0
 # SSH（私有 fork、或 HTTPS 被限流的网络）
 dsh plugin --profile web add git+ssh://git@github.com/kaijia323/dsh-agency-agents.git
 
-# 本地开发：改完代码想让 Profile 直接用这份
-dsh plugin --profile web add /path/to/dsh-agency-agents
+# 本地开发：见下方「本地开发」一节（不能直接 add 仓库路径）
 ```
 
 pnpm 会把 `github:` 解析成 `codeload.github.com` 上的 tarball 并**锁到具体 commit**（`pnpm-lock.yaml` 里能看到完整 sha），所以"装一次"是可复现的。仓库 tarball 包含全部源码、`cordis.patch.yml` 与 277 角色快照（约 1.5 MB 压缩后），不受 `files` 白名单影响。
@@ -106,6 +105,28 @@ dsh plugin --profile web remove dsh-agency-agents     # 工具、提示段、设
 宿主组合里已有的 `subagent` / `subagent-spawn-in-process` / `tool-jobs` 行保持不变即可。
 
 `dsh.client` 声明了浏览器包，所以「专家团」页随同一行一起上架；目前是**未打包的 ESM 源码**（`./client` → `src/client.js`，刻意不 import 任何东西，因此宿主可以直接把它作为 bundle 提供）。如果将来加了依赖，再引入打包步骤。
+
+### 本地开发
+
+**不要**用 `dsh plugin --profile web add /path/to/repo` 或软链接来跑本仓库，它一定起不来：
+
+```
+Cannot find package '@deepseek-ai/dsh-tools' imported from /path/to/repo/src/index.js
+```
+
+原因是 Node 会对软链接做 realpath：解析基准变成仓库真实路径，而 `@deepseek-ai/*` 这组 peer 只存在于 profile 共享的 `node_modules`，
+从仓库路径向上找不到。pnpm 的 `github:` / tarball 安装之所以正常，是因为它把包**拷贝**进 profile 的 `node_modules`（不软链），解析基准就落在 profile 里。
+
+所以本地改完要试跑，用拷贝：
+
+```sh
+P=~/.dsh/profiles/web/node_modules/dsh-agency-agents
+rm -rf "$P" && mkdir -p "$P"
+cp -r src data cordis.patch.yml package.json "$P/"
+dsh web --port 0 --no-open     # 只启动、不占 3080，验证装配
+```
+
+`npm test` 不需要部署：测试通过 loader hook 把 `@deepseek-ai/dsh-tools` 换成内存桩（见 `test/stub-harness.mjs`）。
 
 ### 配置项
 
@@ -162,6 +183,7 @@ dsh plugin --profile web remove dsh-agency-agents     # 工具、提示段、设
 5. **不提供 continuable 子代理**（可追问、可打断）。`agency_run` 是 one-shot 或后台任务；DSH 原生的 `subagent` 工具仍可用于需要续聊的场景。
 6. **「专家团」页只读**。想看/选专家可以，但仍然没有"在这里点一下就让主代理去用"的入口 —— 委托仍由主代理自主决定，这符合本插件的定位。
 7. **编队是推荐而非约束**。`SQUADS` 只告诉模型"手册里这套组合是验证过的"，它仍可自由点名任何一位专家；`agency_team` 也不做依赖排序。
+8. **必须用拷贝式安装**（`github:` / tarball / 真 npm 包）。软链或仓库路径直接 `add` 会因为 peer 解析不到而启动失败，原因见「本地开发」。
 
 ---
 
