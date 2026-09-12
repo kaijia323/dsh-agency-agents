@@ -24,6 +24,26 @@ import { escapePromptText } from './persona.js'
 const SUMMARY_CHARS = 44
 
 /**
+ * The few-shot routing examples rendered under the gate.
+ *
+ * A roster of 277 names tells the model *who exists* but not *when to reach for
+ * one*; these lines give it a concrete, imitable mapping from request shape to
+ * role id. They are deliberately spread across departments and deliberately
+ * short — a long list would compete for attention with the rosters themselves.
+ * The role ids here are asserted by the catalog test, so a rename upstream
+ * fails the suite instead of silently shipping a dangling example.
+ */
+const ROUTING_EXAMPLES = [
+  '「帮我看看这段代码有没有问题 / 审查一下这个 PR」→ `engineering-code-reviewer`',
+  '「这个功能该怎么做 / 帮我拆需求 / 排优先级」→ `product-manager`',
+  '「这个定价合理吗 / 该怎么定价」→ `specialized-pricing-analyst`',
+  '「这份合同有没有风险 / 帮我审一下条款」→ `legal-contract-reviewer`',
+  '「这个接口慢 / 数据库查询要优化」→ `testing-performance-benchmarker` 或 `engineering-database-optimizer`',
+  '「帮我做个安全测试 / 有没有漏洞」→ `security-penetration-tester`',
+  '「这份财报 / 这个投资标的怎么看」→ `finance-financial-analyst`',
+]
+
+/**
  * Render the resident catalog section.
  * @param {import('./roster.js').Roster} roster - the index.
  * @param {{ mode?: 'off'|'depts'|'compact'|'full', departments?: string[], includeOrchestration?: boolean, toolNames?: { list: string, find: string, run: string, team: string, brief: string } }} [options] - render options.
@@ -57,12 +77,19 @@ export function renderCatalog(roster, options = {}) {
       lines.push('')
     }
   }
-  lines.push('## 如何使用')
+  lines.push('## 何时调用（路由门禁）')
   lines.push(
-    `- 需求只有一个明确专业视角时，直接 ${names.run}（employee 传角色 id 或中文名）。`,
-    `- 不确定该找谁时，先 ${names.find}（传需求描述，返回候选与理由），再用 ${names.brief} 看一眼职责。`,
-    `- 只记得部门时用 ${names.list}。`,
-    `- 一个任务需要多个专业视角、且交付物可分别验收时，才编排：用 ${names.run} 逐个推进，或用 ${names.team} 让互不依赖的几位同时开工。`,
+    `**接到需求先做一次判断：这属于哪个专业领域？** 只要它落在上面某个部门覆盖的专业范围内、需要专业判断或行业标准，就先路由，不要自己闷头做完：`,
+    `- 拿不准该找谁 → ${names.find}（传需求描述，返回候选与理由），再用 ${names.brief} 看一眼职责。`,
+    `- 已经知道角色 id 或中文名 → 直接 ${names.run}（employee 传角色 id 或中文名）。`,
+    `- 只记得部门 → ${names.list}。`,
+    '',
+    `判断的时机是**动手之前**，不是做完之后。需要领域判断的工作自己全做完，等于放弃了这批专家的专业流程与交付标准——而委托他们不占用本会话的上下文：角色正文只在子代理里展开。`,
+    '',
+    '典型路由（示例，不是全集）：',
+    ...ROUTING_EXAMPLES.map((line) => `- ${line}`),
+    '',
+    `纯实现、纯查询、纯机械改动自己做；一个任务需要**多个**专业视角、且交付物能分别验收时，再升级成编队：用 ${names.run} 逐个推进，或用 ${names.team} 让互不依赖的几位同时开工。`,
   )
   lines.push('')
   if (options.includeOrchestration !== false) lines.push(renderOrchestrationHint(names))
@@ -79,7 +106,8 @@ export function renderOrchestrationHint(names) {
   return [
     '## 编排守则',
     '',
-    '- **门槛**：只有当一个任务需要 2 个以上不同专业视角、且各交付物能独立验收时才编排。单一实现或单一查询类任务直接自己做，或只派一位专家——每个专家子代理都是一份独立上下文和一次完整推理，不要为小事开会。',
+    '- **门槛（单点专家）**：需求只要需要专业判断、行业标准或专业交付物（审查报告、合规清单、评估结论、方案设计），就委托一位对口专家，而不是自己兼着做。专家的价值在于他那套流程与交付标准，不只是多一个视角。',
+    '- **门槛（多人编队）**：需要 2 个以上不同专业视角、且各交付物能独立验收时，才升级成编队。不要为小事开会——每个专家子代理都是一次完整推理。',
     '- **三级编队**：定向任务用 3–5 位（调研→分析→汇总、修复→验证→出证据）；功能/MVP 用 15–25 位；企业级全流程才动用完整流水线。',
     '- **顺序**：每阶段有守门人，未达标不得推进。用 ' +
       names.playbook +

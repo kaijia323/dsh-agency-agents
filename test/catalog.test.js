@@ -34,8 +34,11 @@ test('mode depts stays a department index', async () => {
   const text = renderCatalog(await indexed(), { mode: 'depts' })
   assert.equal(text.includes('可用部门'), true)
   assert.equal(text.includes('engineering(工程, 42人)'), true)
-  assert.equal(text.includes('engineering-code-reviewer'), false, 'no role ids in depts mode')
-  assert.equal(text.length < 2000, true, `depts mode must stay cheap, got ${text.length}`)
+  // The property is that no roster is enumerated — not that no role id can
+  // appear anywhere: the routing examples legitimately name a handful of roles
+  // to make the mapping concrete. Department headers are what enumeration adds.
+  assert.equal(/^## .+ · .+ \(\d+\)$/m.test(text), false, 'no per-department rosters in depts mode')
+  assert.equal(text.length < 2600, true, `depts mode must stay cheap, got ${text.length}`)
 })
 
 test('mode compact lists every role id and name, with no summaries', async () => {
@@ -77,7 +80,7 @@ test('the orchestration policy ships with the catalog and names the real tools',
 test('the orchestration policy can be omitted for a deployment that wants only a roster', async () => {
   const text = renderCatalog(await indexed(), { mode: 'depts', includeOrchestration: false })
   assert.equal(text.includes('## 编排守则'), false)
-  assert.equal(text.includes('## 如何使用'), true)
+  assert.equal(text.includes('## 何时调用（路由门禁）'), true)
 })
 
 test('a department scope narrows the catalog to the named departments', async () => {
@@ -94,4 +97,41 @@ test('custom tool names flow into the rendered instructions', async () => {
   })
   assert.equal(text.includes('team_run'), true)
   assert.equal(text.includes('agency_run'), false)
+})
+
+// The gate exists because a roster alone was not enough: the model knew who was
+// available but never reached for one during ordinary requests, and the old
+// policy's single "2+ perspectives, otherwise do it yourself" threshold read as
+// an instruction to work alone. These assertions pin the two properties that fix
+// that — an explicit routing step *before* starting work, and a single-expert
+// tier that fires without requiring a team.
+test('the catalog routes before work starts instead of only describing the roster', async () => {
+  const text = renderCatalog(await indexed(), { mode: 'compact' })
+  assert.equal(text.includes('## 何时调用（路由门禁）'), true)
+  assert.equal(text.includes('接到需求先做一次判断'), true)
+  assert.equal(text.includes('动手之前'), true, 'the gate must fire before the work, not after')
+  assert.equal(text.includes('典型路由'), true)
+})
+
+test('the policy separates the single-expert tier from the team tier', async () => {
+  const text = renderCatalog(await indexed(), { mode: 'depts' })
+  assert.equal(text.includes('门槛（单点专家）'), true)
+  assert.equal(text.includes('门槛（多人编队）'), true)
+  // The retired wording is what suppressed delegation on ordinary requests.
+  assert.equal(text.includes('才编排'), false, 'the old single high threshold must be gone')
+})
+
+test('every role id named in a routing example really exists in the roster', async () => {
+  const loaded = await indexed()
+  const text = renderCatalog(loaded, { mode: 'compact' })
+  // Scope to the examples themselves: the orchestration hint that follows names
+  // playbook ids (`micro-bugfix`), which are not roles.
+  const start = text.indexOf('典型路由')
+  const end = text.indexOf('## 编排守则')
+  const examples = text.slice(start, end === -1 ? undefined : end)
+  const named = [...new Set([...examples.matchAll(/`([a-z][a-z0-9-]*[a-z0-9])`/g)].map((m) => m[1]))]
+  assert.ok(named.length >= 6, `expected the examples to name roles, found ${named.length}`)
+  for (const id of named) {
+    assert.notEqual(loaded.resolve(id), undefined, `routing example names unknown role "${id}"`)
+  }
 })

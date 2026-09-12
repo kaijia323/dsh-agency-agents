@@ -61,7 +61,7 @@ DSH 的 `subagents` 服务在启动请求上就带 `persona` 字段。in-process
 dsh plugin --profile web add github:kaijia323/dsh-agency-agents
 
 # 或钉住某个 tag / commit（生产环境推荐，升级变成显式动作）
-dsh plugin --profile web add github:kaijia323/dsh-agency-agents#v0.1.0
+dsh plugin --profile web add github:kaijia323/dsh-agency-agents#v0.1.4
 
 # SSH（私有 fork、或 HTTPS 被限流的网络）
 dsh plugin --profile web add git+ssh://git@github.com/kaijia323/dsh-agency-agents.git
@@ -152,7 +152,7 @@ dsh web --port 0 --no-open     # 只启动、不占 3080，验证装配
 | `roster.root` | — | `external` 时必填 |
 | `roster.nameAliases` | 内置 2 条 | 剧本用的角色名 → 角色 id |
 | `roster.skipDepartments` | `[]` | 不暴露的部门 |
-| `catalog.mode` | `compact` | `off` / `depts`(≈1.4 K) / `compact`(≈13 K) / `full`(≈26 K) 字符 |
+| `catalog.mode` | `compact` | `off` / `depts`(≈2.1 K) / `compact`(≈13.5 K) / `full`(≈26.4 K) 字符 |
 | `catalog.departments` | 全部 | 只常驻这些部门的清单 |
 | `catalog.includeOrchestration` | `true` | 是否常驻编排守则 |
 | `catalog.sectionOrder` | `2810` | 提示段序号（紧接 `TOOL_SUBAGENT: 2800`） |
@@ -167,6 +167,32 @@ dsh web --port 0 --no-open     # 只启动、不占 3080，验证装配
 ---
 
 ## 编排：主代理如何自主判断
+
+### 触发：插件不劫持路由，主代理按门禁自己判断
+
+这是装完之后最容易困惑的一点，值得先说清楚：**插件不会在"普通聊天"里自动弹出专家**。它只做两件事 ——
+
+1. 往系统提示里挂一段常驻目录（277 个角色名 + 编排守则）；
+2. 注册 6 个工具。
+
+至于"这一轮到底该不该叫专家"，完全是主代理读了提示词之后的判断。所以**提示词怎么写，决定了它会不会被用**，而不是装没装。
+
+v0.1.3 及更早的写法是这样的：
+
+> 门槛：只有当 2 个以上不同专业视角、且各交付物能独立验收时**才**编排。单一实现或单一查询类任务**直接自己做**……不要为小事开会。
+
+两个条件同时满足才动手，于是"默认自己做完"成了主代理的行为基线 —— 装了但看不见，属于设计缺陷，不是安装问题。v0.1.4 起改成**门禁**式写法：
+
+| 位置 | 内容 |
+|---|---|
+| 路由门禁 | 「接到需求先做一次判断：这属于哪个专业领域？」→ 拿不准先 `agency_find`，已知角色直接 `agency_run`。并明确「判断的时机是**动手之前**，不是做完之后」 |
+| 门槛（单点专家） | 需要专业判断 / 行业标准 / 专业交付物（审查报告、合规清单、评估结论、方案设计）→ 委托一位对口专家 |
+| 门槛（多人编队） | 2 个以上专业视角、交付物能分别验收 → 才升级成编队 |
+| 典型路由 | 7 条"请求形状 → 角色 id"示例，给模型最省力的模仿路径 |
+
+尺度由你调：想要更克制，把 `catalog.mode` 降到 `depts`（约 2.1 K，只留部门名和守则）；完全不想常驻，设 `off`，主代理就必须先调 `agency_list` 才知道有哪些专家。代价是触发率随之下降 —— 常驻目录本身就是触发的一部分。
+
+### 剧本：编排最难自创的部分已经写好了
 
 仓库里的 `strategy/` 是一套完整的运营手册（约 165 K 字符），它把编排最难自创的部分都写死了：
 

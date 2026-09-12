@@ -160,7 +160,7 @@ export function createTools(deps) {
   tools.push(defineHarnessTool({
     name: names.run,
     description:
-      '把一件完整的工作交给专家库中的某位专家，以他的专业人设、流程与交付标准在一个独立子代理中完成。子代理看不到本会话的对话，task 必须自包含（背景、输入、产出要求、验收标准写清楚）。默认后台运行并返回子代理/任务 id，结束时你会收到通知；把 wait 设为 true 则等结果。需要多个专业视角时，分别对多位专家调用本工具，或改用 agency_team。只做单一实现/查询类的小事不要用它。',
+      '把一件完整的工作交给专家库中的某位专家，以他的专业人设、流程与交付标准在一个独立子代理中完成。当需求需要专业判断、行业标准或专业交付物（审查报告、合规清单、评估结论、方案设计）时优先用它——专家的价值在于他那套流程与交付标准，自己兼着做等于放弃了它；委托不占用本会话上下文，角色正文只在子代理里展开。子代理看不到本会话的对话，task 必须自包含（背景、输入、产出要求、验收标准写清楚）。默认后台运行并返回子代理/任务 id，结束时你会收到通知；把 wait 设为 true 则等结果。需要多个专业视角时，分别对多位专家调用本工具，或改用 agency_team。纯实现、纯查询、纯机械改动自己做，不要为小事开会。',
     parameters: {
       employee: { type: 'string', required: true, description: '角色 id 或中文名。不确定时先用 agency_find。' },
       task: { type: 'string', required: true, description: '交给该专家的完整任务说明。必须自包含：他看不到本会话。' },
@@ -228,7 +228,7 @@ export function createTools(deps) {
   tools.push(defineHarnessTool({
     name: names.team,
     description:
-      '一次把多个互不依赖的任务并发交给多位专家，并汇总结果。适合"同一阶段多视角并行"（如同时做安全审计、性能评估、可访问性检查）或四条并行轨道同时开工。互有依赖的任务不要放进同一次调用——那应该用多次 agency_run 按顺序推进。',
+      '一次把多个互不依赖的任务并发交给多位专家，并汇总结果。适合"同一阶段多视角并行"（如同时做安全审计、性能评估、可访问性检查）或四条并行轨道同时开工；需要 3–5 位专家从不同角度审同一件事时用它，比逐个 agency_run 更快。互有依赖的任务不要放进同一次调用——那应该用多次 agency_run 按顺序推进。',
     parameters: {
       assignments: {
         type: 'array',
