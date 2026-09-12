@@ -81,7 +81,7 @@ export function createTools(deps) {
 
   // ── roster family ────────────────────────────────────────────────────────
 
-  tools.push(defineTool({
+  tools.push(defineHarnessTool({
     name: names.list,
     description:
       '列出 agency-agents 专家库的部门与角色。不带参数返回部门清单（每个部门人数与职责）；传 department 返回该部门的完整角色清单（id + 中文名 + 一句话简介）。只查询、不产生子代理。不确定该找谁时先用 agency_find。',
@@ -113,7 +113,7 @@ export function createTools(deps) {
     },
   }))
 
-  tools.push(defineTool({
+  tools.push(defineHarnessTool({
     name: names.find,
     description:
       '按需求描述检索最合适的专家角色，返回候选（id + 中文名 + 简介 + 命中理由）。当你不确定该派谁、或需求跨专业时用它挑人；确认后调用 agency_run。只查询、不产生子代理。',
@@ -140,7 +140,7 @@ export function createTools(deps) {
     },
   }))
 
-  tools.push(defineTool({
+  tools.push(defineHarnessTool({
     name: names.brief,
     description:
       '查看某位专家角色的职责概要（简介 + 职责/流程要点），用于委托前确认人选是否对口。不产生子代理、不消耗子代理上下文，成本极低。',
@@ -157,7 +157,7 @@ export function createTools(deps) {
 
   // ── execution family ─────────────────────────────────────────────────────
 
-  tools.push(defineTool({
+  tools.push(defineHarnessTool({
     name: names.run,
     description:
       '把一件完整的工作交给专家库中的某位专家，以他的专业人设、流程与交付标准在一个独立子代理中完成。子代理看不到本会话的对话，task 必须自包含（背景、输入、产出要求、验收标准写清楚）。默认后台运行并返回子代理/任务 id，结束时你会收到通知；把 wait 设为 true 则等结果。需要多个专业视角时，分别对多位专家调用本工具，或改用 agency_team。只做单一实现/查询类的小事不要用它。',
@@ -171,7 +171,11 @@ export function createTools(deps) {
       extra_instructions: { type: 'string', description: '可选：追加到该专家人设后的额外要求（例如"用中文回答"、"不要改代码，只出方案"）。' },
       max_depth: { type: 'number', description: `可选：该子代理的递归深度上限，默认 ${config.delegation.defaultMaxDepth}。0 表示禁止他再派子代理。` },
       model: { type: 'string', description: '可选：为本次委托指定模型 id；不填则继承当前模型。' },
-      output_schema: { type: 'object', description: '可选：要求子代理返回结构化 JSON（object 根 JSON Schema），结果会附在交付物里，便于程序化判断 PASS/FAIL。' },
+      // `additionalProperties: true` is required, not cosmetic: the tool-parameter
+      // compiler rejects any `type: 'object'` node that does not state openness
+      // explicitly, and this node is deliberately an arbitrary JSON Schema whose
+      // key set the caller owns.
+      output_schema: { type: 'object', additionalProperties: true, description: '可选：要求子代理返回结构化 JSON（object 根 JSON Schema），结果会附在交付物里，便于程序化判断 PASS/FAIL。' },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute(args, exec) {
@@ -221,15 +225,26 @@ export function createTools(deps) {
     },
   }))
 
-  tools.push(defineTool({
+  tools.push(defineHarnessTool({
     name: names.team,
     description:
       '一次把多个互不依赖的任务并发交给多位专家，并汇总结果。适合"同一阶段多视角并行"（如同时做安全审计、性能评估、可访问性检查）或四条并行轨道同时开工。互有依赖的任务不要放进同一次调用——那应该用多次 agency_run 按顺序推进。',
     parameters: {
       assignments: {
-        type: 'object',
+        type: 'array',
         required: true,
         description: '任务数组，每项形如 {"employee": "角色id", "task": "自包含任务说明", "context": "可选", "acceptance": "可选", "deliverable": "可选"}。',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            employee: { type: 'string', required: true, description: '角色 id 或中文名。' },
+            task: { type: 'string', required: true, description: '交给该专家的完整任务说明。' },
+            context: { type: 'string', description: '可选：相关背景。' },
+            acceptance: { type: 'string', description: '可选：验收标准。' },
+            deliverable: { type: 'string', description: '可选：交付物形态要求。' },
+          },
+        },
       },
       wait: { type: 'boolean', description: '默认 true（并发执行并等全部结束，返回汇总）。设为 false 则立刻返回各任务 id 转入后台。' },
       max_depth: { type: 'number', description: `可选：每个子代理的深度上限，默认 ${config.delegation.defaultMaxDepth}。` },
@@ -313,7 +328,7 @@ export function createTools(deps) {
   // ── orchestration ────────────────────────────────────────────────────────
 
   if (config.playbook.enabled) {
-    tools.push(defineTool({
+    tools.push(defineHarnessTool({
       name: names.playbook,
       description:
         '按需加载编排剧本（来自专家库自带的 NEXUS 运营手册）：阶段流程、质量门禁与守门人、交接模板、角色激活提示词、定向任务的编队脚本。要编排多个专家时先读剧本再动手，不要凭记忆编流程。',
@@ -339,6 +354,24 @@ export function createTools(deps) {
   }
 
   return tools
+}
+
+/**
+ * Define one model-facing tool, with the tool's name on any definition error.
+ *
+ * The harness's `defineTool` compiles the parameter map and throws for a
+ * declaration outside its schema subset; on its own that surfaces as an
+ * anonymous loader failure that takes the whole profile's boot down. Naming the
+ * row makes the defect one line to fix. Note the compile happens **inside**
+ * `defineTool` — the returned definition carries the compiled JSON Schema in
+ * `parameters`, so re-compiling that result is not a valid check.
+ */
+function defineHarnessTool(options) {
+  try {
+    return defineTool(options)
+  } catch (error) {
+    throw new Error(`agency-agents: tool "${options.name}" is malformed: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 /**

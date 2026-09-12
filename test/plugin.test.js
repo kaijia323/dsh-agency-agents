@@ -458,3 +458,73 @@ test('ui.settingsPage false registers no RPC, and a host without the helper only
   assert.equal(noHelper.handlers.size, 0)
   assert.equal(noHelper.registered.length, 6, 'the tools still mount')
 })
+
+// ── parameter declarations ─────────────────────────────────────────────────
+//
+// Regression guard for a defect that shipped in v0.1.0: `output_schema` and
+// `assignments` were declared as bare `{ type: 'object' }`, which the harness
+// parameter compiler rejects — the mount failed and took the whole profile's
+// boot down. The stub now compiles parameters, so any regression fails here.
+
+test('every tool parameter map compiles under the harness schema rules', async () => {
+  const mounted = await mount()
+  assert.equal(mounted.registered.length, 6)
+  for (const tool of mounted.registered) {
+    assert.equal(typeof tool.parameters, 'object', `${tool.name} declares parameters`)
+    // The stub's defineTool already compiled it; assert the shape survived too.
+    for (const [name, declared] of Object.entries(tool.parameters)) {
+      assert.equal(typeof declared, 'object', `${tool.name}.${name}`)
+      assert.equal(typeof declared.description, 'string', `${tool.name}.${name} documents itself`)
+    }
+  }
+})
+
+test('the harness rejects an object parameter that does not state its openness', async () => {
+  const { defineTool } = await import('@deepseek-ai/dsh-tools')
+  const base = { name: 'probe', description: 'x', output: { schema: { type: 'string' }, render: () => [] }, execute: async () => '' }
+  assert.throws(() => defineTool({ ...base, parameters: { p: { type: 'object' } } }), /additionalProperties must be explicitly true or false/)
+  assert.throws(
+    () => defineTool({ ...base, parameters: { p: { type: 'array', items: { type: 'object', properties: { a: { type: 'string' } } } } } }),
+    /items\.additionalProperties must be explicitly true or false/,
+  )
+  assert.throws(
+    () => defineTool({ ...base, parameters: { p: { type: 'object', additionalProperties: true, properties: { q: { type: 'object' } } } } }),
+    /properties\.q\.additionalProperties must be explicitly true or false/,
+  )
+  // The two shapes the plugin actually uses must compile.
+  defineTool({ ...base, parameters: { p: { type: 'object', additionalProperties: true } } })
+  defineTool({
+    ...base,
+    parameters: {
+      p: {
+        type: 'array',
+        required: true,
+        items: { type: 'object', additionalProperties: false, properties: { a: { type: 'string', required: true } } },
+      },
+    },
+  })
+})
+
+test('the two parameters that broke the profile keep their literal shapes', async () => {
+  const { tool } = await mount()
+  // `output_schema` carries a caller-owned JSON Schema, so it stays open.
+  assert.equal(tool('agency_run').parameters.output_schema.type, 'object')
+  assert.equal(tool('agency_run').parameters.output_schema.additionalProperties, true)
+  // `assignments` cross a fixed wire shape as an array of closed objects.
+  const assignments = tool('agency_team').parameters.assignments
+  assert.equal(assignments.type, 'array')
+  assert.equal(assignments.required, true)
+  assert.equal(assignments.items.type, 'object')
+  assert.equal(assignments.items.additionalProperties, false)
+  assert.deepEqual(Object.keys(assignments.items.properties).sort(), ['acceptance', 'context', 'deliverable', 'employee', 'task'])
+})
+
+test('agency_team still accepts an array of assignments after the declaration change', async () => {
+  const { tool, subagents } = await mount()
+  const text = await tool('agency_team').execute(
+    { assignments: [{ employee: '代码审查员', task: 'a' }, { employee: '定价分析师', task: 'b' }] },
+    execFor({ id: 'p' }, '/w'),
+  )
+  assert.equal(text.includes('成功 2'), true)
+  assert.equal(subagents.starts.length, 2)
+})
