@@ -154,6 +154,56 @@ test('a Chinese role name works as the employee, same as the tool accepts', asyn
   assert.equal(agent.submitted[0].content[0].text.includes('engineering-code-reviewer'), true)
 })
 
+// The composer REFUSES a submission carrying attachments when the definition does
+// not declare them, so the handler never runs. That shipped once: a user attached
+// a screenshot of a bug and got "/agency-agents 不接受附件，请先移除附件" instead of a
+// delegation. Declaring support is the whole fix, so it is asserted.
+test('the command declares attachment support', async () => {
+  const { command } = await mount()
+  assert.equal(command.input.attachments, true, 'without this the composer rejects the submission')
+})
+
+test('attachments are forwarded to the delegation instead of dropped', async () => {
+  const { command } = await mount()
+  const agent = fakeAgent()
+  const image = { type: 'image', attachment: { id: 'att-1' } }
+  const file = { type: 'file', attachment: { id: 'att-2', name: 'log.txt' } }
+  const result = command.handler({
+    agent,
+    rawInput: ' 用 engineering-code-reviewer 看这个闪烁 bug',
+    attachments: [image, file],
+    signal: new AbortController().signal,
+  })
+  assert.equal(result.kind, 'success')
+  assert.equal(result.text.includes('2 个附件'), true, 'the confirmation says what was sent')
+
+  const content = agent.submitted[0].content
+  assert.equal(content.length, 3, 'one instruction plus two attachments')
+  assert.equal(content[0].type, 'text', 'the task is read before the images')
+  assert.deepEqual(content[1], image)
+  assert.deepEqual(content[2], file)
+})
+
+test('a delegation without attachments submits exactly one text block', async () => {
+  const { command } = await mount()
+  const agent = fakeAgent()
+  command.handler(invoke(agent, ' 用 engineering-code-reviewer 看一下'))
+  assert.equal(agent.submitted[0].content.length, 1)
+})
+
+test('an attachment-bearing call still resolves the expert before submitting', async () => {
+  const { command } = await mount()
+  const agent = fakeAgent()
+  const result = command.handler({
+    agent,
+    rawInput: ' 用 不存在的专家 看这个',
+    attachments: [{ type: 'image', attachment: { id: 'att-1' } }],
+    signal: new AbortController().signal,
+  })
+  assert.equal(result.kind, 'error')
+  assert.equal(agent.submitted.length, 0, 'a bad employee name must not reach the model, attachments or not')
+})
+
 test('an unknown expert fails before reaching the model', async () => {
   const { command } = await mount()
   const agent = fakeAgent()

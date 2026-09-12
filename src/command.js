@@ -149,6 +149,27 @@ export function renderDelegationInstruction(role, task, toolNames) {
 }
 
 /**
+ * Build the content array a delegation submits: the instruction text, then the
+ * admitted attachments.
+ *
+ * Attachments come through unchanged. That is deliberate and safe: request
+ * assembly owns every capability question — a file block is projected to
+ * deterministic handle text (name, byte size, read-only saved path) and an image
+ * block to a stable placeholder when the routed model cannot accept one — so
+ * this handler never inspects the blocks or guesses at the model's abilities.
+ *
+ * The instruction leads so the task is read before the images, matching how the
+ * composer itself submits an attachment-bearing message.
+ *
+ * @param {string} text - the rendered instruction.
+ * @param {readonly object[]} [attachments] - durable image and file blocks.
+ * @returns {object[]} the followup message content.
+ */
+export function buildDelegationContent(text, attachments = []) {
+  return [{ type: 'text', text }, ...attachments]
+}
+
+/**
  * Register the `/agency-agents` command.
  *
  * A deployment whose composition omits the command registry keeps the rest of
@@ -172,7 +193,14 @@ export function registerAgencyCommand(ctx, deps) {
         commands.register({
           name: AGENCY_COMMAND,
           description: '手动调用专家库：列专家团、按需求找角色、或指定专家把任务交给主代理',
-          input: { hint: '[找 <需求> | 用 <角色> <任务>]' },
+          // `attachments: true` is load-bearing, not decoration. The contract is
+          // that a command which does not declare it receives no attachment
+          // blocks and capable composers REFUSE the submission outright — the
+          // handler never runs. Screenshot-plus-instruction is the natural way to
+          // ask an expert to look at a bug, so the command accepts them and
+          // forwards them to the delegation. What each block becomes for the
+          // routed model is request assembly's decision, not this handler's.
+          input: { hint: '[找 <需求> | 用 <角色> <任务>] 可带图片/文件', attachments: true },
           handler(invocation) {
             const parsed = parseAgencyInvocation(invocation.rawInput)
             try {
@@ -194,15 +222,21 @@ export function registerAgencyCommand(ctx, deps) {
                   if (parsed.task.length === 0) {
                     return { kind: 'error', text: `用法：/${AGENCY_COMMAND} 用 ${role.id} <任务>` }
                   }
+                  const attachments = invocation.attachments ?? []
                   invocation.agent.followup(
                     createUserMessage({
-                      content: [{ type: 'text', text: renderDelegationInstruction(role, parsed.task, deps.toolNames) }],
+                      content: buildDelegationContent(
+                        renderDelegationInstruction(role, parsed.task, deps.toolNames),
+                        attachments,
+                      ),
                       source: { kind: 'user' },
                     }),
                   )
                   return {
                     kind: 'success',
-                    text: `已指定 ${role.name}（\`${role.id}\`），主代理会据此委托。`,
+                    text:
+                      `已指定 ${role.name}（\`${role.id}\`），主代理会据此委托。` +
+                      (attachments.length > 0 ? `随附 ${attachments.length} 个附件已一并交给它。` : ''),
                   }
                 }
                 /* v8 ignore next 2 -- the union above is closed and every member is handled */
