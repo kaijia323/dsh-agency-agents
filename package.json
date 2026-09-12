@@ -1,6 +1,6 @@
 {
   "name": "dsh-agency-agents",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "把 agency-agents-zh 的 277 位中文专家角色接入 DeepSeek Harness：主代理按需检索、以角色人设启动子代理、按 NEXUS 剧本编排多智能体协作。",
   "keywords": [
     "dsh",
@@ -52,12 +52,16 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-subagent": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-system-prompt": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-tools": "^0.1.5-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
       "optional": true
     },
     "@deepseek-ai/dsh-subagent": {

@@ -27,6 +27,7 @@ import { register } from 'node:module'
 /** Identities the harness owns; a stub instance is returned per specifier. */
 const STUBBED = new Set([
   '@deepseek-ai/dsh-tools',
+  '@deepseek-ai/dsh-llm',
   '@deepseek-ai/dsh-subagent',
   '@deepseek-ai/dsh-system-prompt',
   '@deepseek-ai/cordis',
@@ -115,6 +116,16 @@ export function defineTool(options) {
   const schema = parameterSchemaSpecToJsonSchema(options.parameters)
   assertSupportedJsonSchema(schema)
   return options
+}
+
+/**
+ * Stand-in for the real user-message factory, which mints an id and freezes the
+ * result. A counter is enough to prove the handler goes through the factory
+ * instead of hand-rolling a message the driver might reject.
+ */
+let messageSeq = 0
+export function createUserMessage(input) {
+  return { ...input, role: 'user', id: 'stub-msg-' + (++messageSeq) }
 }
 `
 

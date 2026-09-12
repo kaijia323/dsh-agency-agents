@@ -30,6 +30,7 @@ import { catalogSectionText, createTools } from './tools.js'
 import { PLAYBOOKS } from './playbook.js'
 import { estimateCatalog } from './catalog.js'
 import { checkProvider } from './delegation.js'
+import { registerAgencyCommand } from './command.js'
 import { registerSettingsPage } from './client.js'
 
 /** Plugin name shown in loader diagnostics. */
@@ -139,6 +140,12 @@ export async function apply(ctx, rawConfig) {
 
   const definitions = createTools({ defineTool, ctx, config, roster, io })
   for (const definition of definitions) ctx.effect(() => tools.register(definition), `agency-agents:${definition.name}`)
+
+  // The manual way in. The catalog and the routing gate let the model decide on
+  // its own; this is for the human who already knows which expert they want.
+  // Registered from this row's own scope, so a deployment that omits the command
+  // registry simply never activates the child fiber.
+  registerAgencyCommand(ctx, { roster, toolNames: { run: config.tools.run, brief: config.tools.brief } })
 
   // The resident catalog and the orchestration policy. Registered through this
   // row's own scope, so it contributes to every agent the composition covers and

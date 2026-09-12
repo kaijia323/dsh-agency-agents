@@ -53,20 +53,26 @@ function fakeJobs() {
 }
 
 /** A minimal Cordis-shaped context for one mount. */
-function fakeContext({ config = {}, subagents, jobs, agents = { id: 'parent-1' }, cwd = '/workspace' } = {}) {
+function fakeContext({ config = {}, subagents, jobs, agents = { id: 'parent-1' }, cwd = '/workspace', noCommands = false } = {}) {
   const registered = []
   const sections = []
   const effects = []
+  const commands = []
   const services = {
     tools: { register: (tool) => { registered.push(tool) } },
     systemPrompt: { section: (section) => { sections.push(section) } },
     subagents,
     jobs,
+    commands: { register: (definition) => { commands.push(definition); return () => {} } },
   }
+  // A minimal composition omits the command registry entirely; the plugin must
+  // then keep every other surface instead of failing to mount.
+  if (noCommands) delete services.commands
   const ctx = {
     registered,
     sections,
     effects,
+    commands,
     config,
     get(name) {
       return services[name]
@@ -75,8 +81,18 @@ function fakeContext({ config = {}, subagents, jobs, agents = { id: 'parent-1' }
       effects.push(label)
       return callback()
     },
+    /**
+     * The real `inject` mounts a child fiber once every named service exists; a
+     * composition that omits one simply never runs the callback. Mirroring that
+     * is what makes the "no command registry" degradation testable.
+     */
+    inject(names, callback) {
+      const missing = names.filter((name) => services[name] === undefined)
+      if (missing.length > 0) return undefined
+      return callback(ctx)
+    },
   }
-  return { ctx, registered, sections, effects, agents, cwd }
+  return { ctx, registered, sections, commands, effects, agents, cwd }
 }
 
 /** Build the caller object a tool execution receives. */
@@ -85,7 +101,7 @@ const execFor = (agent, cwd) => ({ agent: { ...agent, session: { header: { cwd }
 async function mount(options = {}) {
   const subagents = options.subagents ?? fakeSubagents()
   const jobs = options.jobs
-  const harness = fakeContext({ config: options.config ?? {}, subagents, jobs, agents: options.agents, cwd: options.cwd })
+  const harness = fakeContext({ config: options.config ?? {}, subagents, jobs, agents: options.agents, cwd: options.cwd, noCommands: options.noCommands })
   await apply(harness.ctx, { roster: { source: 'external', root: ROOT }, logRosterSummary: false, ...(options.config ?? {}) })
   const tool = (name) => harness.registered.find((entry) => entry.name === name)
   return { ...harness, subagents, jobs, tool }
@@ -144,7 +160,18 @@ test('apply indexes the corpus, registers every tool, and contributes one prompt
   assert.equal(mounted.sections[0].order, 2810)
   assert.equal(mounted.sections[0].text.includes('engineering-code-reviewer'), true)
   assert.equal(mounted.sections[0].text.includes('{{'), false, 'the section is template-safe')
-  assert.equal(mounted.effects.length, 7, 'six tool effects plus the prompt section')
+  // Every registration belongs to the row's own fiber, so stopping the row
+  // unwinds all of it. Naming them beats counting: a dropped label is the
+  // failure mode that leaves a tool registered after the plugin is gone.
+  assert.deepEqual(
+    mounted.effects.slice().sort(),
+    [
+      ...['list', 'find', 'brief', 'run', 'team', 'playbook'].map((name) => `agency-agents:agency_${name}`),
+      'agency-agents:catalog',
+      'agency-agents:command',
+    ].sort(),
+  )
+  assert.equal(mounted.commands.length, 1, 'the manual entry point registers with the rest')
 })
 
 test('catalog.mode off registers tools but contributes no resident text', async () => {
