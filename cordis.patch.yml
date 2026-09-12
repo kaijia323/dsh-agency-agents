@@ -1,0 +1,50 @@
+# dsh-agency-agents — host-plane row for the agency-agents expert library.
+#
+# This bundle contributes one row: the roster index, the model-facing tools, and
+# the resident catalog section. It publishes NO service of its own, so it needs
+# no `isolate` realm, and it consumes the host's `subagents` registry — which is
+# why it belongs here rather than in an agent preset.
+#
+# Prerequisites already present in the base composition:
+#   @deepseek-ai/dsh-subagent + a persona-capable in-process provider
+#   (@deepseek-ai/dsh-subagent-spawn-in-process and/or -fork-in-process),
+#   @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-tools,
+#   and @deepseek-ai/dsh-jobs + @deepseek-ai/dsh-tool-jobs for background runs.
+#
+# Install the package into the profile (dsh plugin --profile <name> add) and
+# restart it: this bundle patch is applied automatically and the row is enabled,
+# so installing is the whole setup. Set `disabled: true` only to keep the package
+# installed but inactive.
+
+- insert:
+    - id: agency-agents
+      name: 'dsh-agency-agents'
+      config:
+        # `builtin` uses the snapshot vendored beside this package. Switch to
+        # `external` with an absolute `root` to follow an upstream checkout.
+        roster:
+          source: builtin
+          # nameAliases: { 你的别名: engineering-code-reviewer }
+          # skipDepartments: [gis, spatial-computing]
+        catalog:
+          # off     — nothing resident; the model must call agency_list
+          # depts   — department names and counts (~1.4 K chars)
+          # compact — department rosters: every role id and display name (~13 K)
+          # full    — the above plus a truncated summary per role (~26 K)
+          mode: compact
+          includeOrchestration: true
+          sectionOrder: 2810
+        delegation:
+          # Must name a provider that declares the `persona` capability.
+          # Out-of-process providers cannot inject a role persona and are
+          # refused at mount.
+          provider: spawn
+          defaultMaxDepth: 1
+          defaultWait: false
+          maxTeamSize: 6
+        playbook:
+          enabled: true
+          maxChars: 24000
+        ui:
+          # The 专家团 page in Settings (Client bundle declared by dsh.client).
+          settingsPage: true

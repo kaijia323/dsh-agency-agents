@@ -1,0 +1,78 @@
+{
+  "name": "dsh-agency-agents",
+  "version": "0.1.0",
+  "description": "把 agency-agents-zh 的 277 位中文专家角色接入 DeepSeek Harness：主代理按需检索、以角色人设启动子代理、按 NEXUS 剧本编排多智能体协作。",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "subagent",
+    "multi-agent",
+    "orchestration",
+    "agency-agents",
+    "chinese"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./src/client.js",
+    "./plugin": "./src/index.js",
+    "./roster": "./src/roster.js",
+    "./catalog": "./src/catalog.js",
+    "./persona": "./src/persona.js",
+    "./playbook": "./src/playbook.js",
+    "./squads": "./src/squads.js",
+    "./settings": "./src/settings.js",
+    "./tools": "./src/tools.js",
+    "./delegation": "./src/delegation.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/",
+    "data/agency-agents-zh/**/*.md",
+    "data/agency-agents-zh/LICENSE",
+    "data/VENDOR.md",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test 'test/*.test.js'",
+    "vendor": "node tools/vendor.mjs",
+    "audit": "node tools/audit.mjs",
+    "emit-eval": "node tools/emit-eval-unit.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-subagent": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-subagent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}
