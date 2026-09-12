@@ -54,11 +54,41 @@ DSH 的 `subagents` 服务在启动请求上就带 `persona` 字段。in-process
 
 插件是 host 平面的一行组合，不是预设的一部分 —— 它不发布任何服务，因此不需要 `isolate` realm，也不会在第二个会话挂载时冲突。
 
+**直接从 GitHub 装**（`dsh plugin --profile <name> add` 的 spec 就是 pnpm 的 spec）：
+
 ```sh
-dsh plugin --profile web add /home/dsh/codes/dsh-agency-agents
+# 默认分支的最新提交
+dsh plugin --profile web add github:kaijia323/dsh-agency-agents
+
+# 或钉住某个 tag / commit（生产环境推荐，升级变成显式动作）
+dsh plugin --profile web add github:kaijia323/dsh-agency-agents#v0.1.0
+
+# SSH（私有 fork、或 HTTPS 被限流的网络）
+dsh plugin --profile web add git+ssh://git@github.com/kaijia323/dsh-agency-agents.git
+
+# 本地开发：改完代码想让 Profile 直接用这份
+dsh plugin --profile web add /path/to/dsh-agency-agents
 ```
 
-**装上就能用，不需要再改任何配置。** 本包自带 `dsh.bundle.patch`（`cordis.patch.yml`），profile 会把它作为一层补丁自动应用，行是启用的 —— 不是注释掉的模板。重启 Profile 后你会得到：七个专家工具、常驻目录提示段、以及设置里的「专家团」页。
+pnpm 会把 `github:` 解析成 `codeload.github.com` 上的 tarball 并**锁到具体 commit**（`pnpm-lock.yaml` 里能看到完整 sha），所以"装一次"是可复现的。仓库 tarball 包含全部源码、`cordis.patch.yml` 与 277 角色快照（约 1.5 MB 压缩后），不受 `files` 白名单影响。
+
+装完**重启 Profile** 即生效，不需要再改任何配置：本包自带 `dsh.bundle.patch`（`cordis.patch.yml`），profile 会把它作为一层补丁自动应用，行是启用的 —— 不是注释掉的模板。你会得到：七个专家工具、常驻目录提示段、以及设置里的「专家团」页。
+
+安装过程做过端到端验证（复刻 DSH 的 `nodeLinker: hoisted` 布局）：`add` 之后 profile 的 `package.json` 会同时得到依赖与本层登记 ——
+
+```json
+{ "dependencies": { "dsh-agency-agents": "github:kaijia323/dsh-agency-agents" },
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "dsh-agency-agents"] } } }
+```
+
+`@deepseek-ai/*` 这组 peer 依赖从 profile 共享的 `node_modules` 解析得到，不需要本包含任何运行时依赖。
+
+升级与卸载：
+
+```sh
+dsh plugin --profile web update dsh-agency-agents     # 按 spec 拉最新（钉了 tag 则不动）
+dsh plugin --profile web remove dsh-agency-agents     # 工具、提示段、设置页一起撤下
+```
 
 要改行为就覆盖配置（bundle 补丁的 `insert` 行还可以被 profile 自己的补丁层按 id 定向覆盖）；要临时停用就加 `disabled: true`：
 
