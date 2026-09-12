@@ -20,6 +20,43 @@ const SUCCESSFUL_STOP_REASON = 'completed'
 export const PERSONA_CAPABLE_PROVIDERS = Object.freeze(['spawn', 'fork'])
 
 /**
+ * Turn the caller's optional `max_depth` argument into the harness's depth cap.
+ *
+ * `maxDepth` in a delegation request is an **absolute cap on the child's own
+ * depth**, verified against `parent depth + 1` — it is not the child's own
+ * recursion budget. So 0 can never succeed: a delegated expert is always at
+ * depth 1 or deeper. The argument used to pass 0 straight through, and the
+ * harness answered
+ *
+ *     subagent depth 1 exceeds maxDepth 0
+ *
+ * which reads as a complaint about the parent's depth. One model read it that
+ * way and concluded that 0 meant "no subagents under the expert" — a meaning no
+ * value of this parameter can produce. Refusing 0 here, before any child is
+ * composed, replaces that with an error that names what the number controls.
+ *
+ * Omitting the argument stays the normal path: it falls back to the plugin's
+ * configured `delegation.defaultMaxDepth`, and a deployment that sets that to
+ * `undefined` passes no cap at all and lets the harness apply its own.
+ *
+ * @param {unknown} requested - the tool call's `max_depth` argument.
+ * @param {number|undefined} fallback - the configured `delegation.defaultMaxDepth`.
+ * @returns {number|undefined} the cap to send, or `undefined` for none.
+ * @throws {Error} when the caller asks for a depth no expert could occupy.
+ */
+export function resolveMaxDepth(requested, fallback) {
+  if (requested === undefined) return fallback
+  if (!Number.isSafeInteger(requested) || requested < 1) {
+    throw new Error(
+      `agency-agents: max_depth ${JSON.stringify(requested)} cannot be honoured — it caps the expert's own depth, ` +
+        `and a delegated expert is always at depth 1 or deeper. Omit max_depth to use the default (${fallback}), ` +
+        `or pass an integer ≥ 1.`,
+    )
+  }
+  return requested
+}
+
+/**
  * Assert that a provider exists and can accept a per-child persona.
  *
  * A delegated role is *only* its persona, so a provider without that capability

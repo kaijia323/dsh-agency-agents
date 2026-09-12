@@ -265,15 +265,25 @@ test('agency_run forwards a model override, a depth override, and a structured-o
       task: 'x',
       wait: true,
       model: 'deepseek-chat',
-      max_depth: 0,
+      // ≥ 1: the cap describes the child's absolute depth, so 0 is refused.
+      max_depth: 2,
       output_schema: { type: 'object', properties: { verdict: { type: 'string' } }, required: ['verdict'] },
     },
     execFor({ id: 'p' }, '/w'),
   )
   const request = subagents.starts[0].request
   assert.deepEqual(request.agentOptions, { model: 'deepseek-chat' })
-  assert.equal(request.maxDepth, 0)
+  assert.equal(request.maxDepth, 2)
   assert.equal(request.outputSchema.type, 'object')
+})
+
+test('agency_run refuses max_depth 0 before composing any child', async () => {
+  const { tool, subagents } = await mount()
+  await assert.rejects(
+    tool('agency_run').execute({ employee: '代码审查员', task: 'x', wait: true, max_depth: 0 }, execFor({ id: 'p' }, '/w')),
+    /max_depth 0 cannot be honoured/,
+  )
+  assert.equal(subagents.starts.length, 0, 'no child is started for a call that cannot succeed')
 })
 
 test('agency_run defaults to the background and reports a collectable job id', async () => {

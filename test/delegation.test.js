@@ -10,9 +10,44 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { checkProvider, contentToText, formatResult, runParallel, settleChild, startAsJob } from '../src/delegation.js'
+import { checkProvider, contentToText, formatResult, resolveMaxDepth, runParallel, settleChild, startAsJob } from '../src/delegation.js'
 
 const ROLE = { id: 'engineering-code-reviewer', name: '代码审查员', department: 'engineering' }
+
+/**
+ * The depth cap is an absolute cap on the child's depth (`parent depth + 1`),
+ * never the child's own recursion budget — so 0 cannot succeed, and it used to
+ * reach the harness and come back as "subagent depth 1 exceeds maxDepth 0",
+ * which one model read as a statement about the parent. These cover the
+ * translation in both directions.
+ */
+test('omitting max_depth falls back to the configured default', () => {
+  assert.equal(resolveMaxDepth(undefined, 1), 1)
+  assert.equal(resolveMaxDepth(undefined, 3), 3)
+  assert.equal(resolveMaxDepth(undefined, undefined), undefined, 'no default means no cap at all')
+})
+
+test('a valid max_depth is passed through unchanged', () => {
+  assert.equal(resolveMaxDepth(1, 1), 1)
+  assert.equal(resolveMaxDepth(2, 1), 2, 'a caller may raise the cap above the default')
+})
+
+test('max_depth 0 is refused with an error that explains the parameter', () => {
+  assert.throws(
+    () => resolveMaxDepth(0, 1),
+    (error) => {
+      assert.equal(error.message.includes('depth 1 or deeper'), true, 'says why 0 is impossible')
+      assert.equal(error.message.includes('Omit max_depth'), true, 'names the working alternative')
+      return true
+    },
+  )
+})
+
+test('negative and non-integer max_depth values are refused too', () => {
+  for (const bad of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(() => resolveMaxDepth(bad, 1), `max_depth ${bad} must be refused`)
+  }
+})
 
 /** A `subagents`-shaped stub. */
 function fakeSubagents(providers) {

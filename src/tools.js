@@ -21,7 +21,7 @@ import { DEPARTMENT_LABELS } from './roster.js'
 import { renderCatalog } from './catalog.js'
 import { buildBrief } from './persona.js'
 import { PLAYBOOKS, playbookIndex, renderPlaybook, resolvePlaybooks } from './playbook.js'
-import { checkProvider, formatResult, runParallel, settleChild, startAsJob, startChild } from './delegation.js'
+import { checkProvider, formatResult, resolveMaxDepth, runParallel, settleChild, startAsJob, startChild } from './delegation.js'
 
 /**
  * Build every tool definition this plugin registers.
@@ -169,7 +169,7 @@ export function createTools(deps) {
       deliverable: { type: 'string', description: '可选：交付物形态要求（例如"分级问题清单"、"含命令输出的验证报告"）。' },
       wait: { type: 'boolean', description: '默认 false（后台）。设为 true 则阻塞等待结果，仅当下一步依赖该结果时使用。' },
       extra_instructions: { type: 'string', description: '可选：追加到该专家人设后的额外要求（例如"用中文回答"、"不要改代码，只出方案"）。' },
-      max_depth: { type: 'number', description: `可选：该子代理的递归深度上限，默认 ${config.delegation.defaultMaxDepth}。0 表示禁止他再派子代理。` },
+      max_depth: { type: 'number', description: `可选：本次委派的深度上限（校验子代理的绝对深度，不是子代理自身的递归预算），默认 ${config.delegation.defaultMaxDepth}。传 0 无效——被委派的专家至少是深度 1；不填即用默认值。` },
       model: { type: 'string', description: '可选：为本次委托指定模型 id；不填则继承当前模型。' },
       // `additionalProperties: true` is required, not cosmetic: the tool-parameter
       // compiler rejects any `type: 'object'` node that does not state openness
@@ -191,7 +191,7 @@ export function createTools(deps) {
         task: args.task,
         framing,
         extraInstructions: args.extra_instructions,
-        maxDepth: Number.isFinite(args.max_depth) ? args.max_depth : config.delegation.defaultMaxDepth,
+        maxDepth: resolveMaxDepth(args.max_depth, config.delegation.defaultMaxDepth),
         agentOptions: typeof args.model === 'string' && args.model.length > 0 ? { model: args.model } : undefined,
         outputSchema: args.output_schema,
       }
@@ -247,7 +247,7 @@ export function createTools(deps) {
         },
       },
       wait: { type: 'boolean', description: '默认 true（并发执行并等全部结束，返回汇总）。设为 false 则立刻返回各任务 id 转入后台。' },
-      max_depth: { type: 'number', description: `可选：每个子代理的深度上限，默认 ${config.delegation.defaultMaxDepth}。` },
+      max_depth: { type: 'number', description: `可选：本次编队的深度上限（校验每位子代理的绝对深度），默认 ${config.delegation.defaultMaxDepth}。传 0 无效。` },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute(args, exec) {
@@ -258,6 +258,9 @@ export function createTools(deps) {
         return `一次最多并发 ${config.delegation.maxTeamSize} 位专家（收到 ${list.length} 位）。请拆成多次调用——这也更容易定位失败原因。`
       }
       const subagents = subagentsOrThrow()
+      // Validated once for the whole team, before any child is composed, so a
+      // bad cap fails the call instead of N identical failures.
+      const maxDepth = resolveMaxDepth(args.max_depth, config.delegation.defaultMaxDepth)
       const prepared = []
       for (const item of list) {
         const role = await roleWithBody(resolveRole(item?.employee))
@@ -275,7 +278,7 @@ export function createTools(deps) {
               task: String(assignment.task ?? ''),
               framing: { context: assignment.context, acceptance: assignment.acceptance, deliverable: assignment.deliverable },
               signal: exec.signal,
-              maxDepth: Number.isFinite(args.max_depth) ? args.max_depth : config.delegation.defaultMaxDepth,
+              maxDepth,
             })
             return { role, result: await settleChild(run) }
           } catch (error) {
@@ -317,7 +320,7 @@ export function createTools(deps) {
             task: String(assignment.task ?? ''),
             framing: { context: assignment.context, acceptance: assignment.acceptance, deliverable: assignment.deliverable },
             signal,
-            maxDepth: Number.isFinite(args.max_depth) ? args.max_depth : config.delegation.defaultMaxDepth,
+            maxDepth,
           })),
         }),
       )
