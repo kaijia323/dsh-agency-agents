@@ -190,6 +190,18 @@ dsh web --port 0 --no-open     # 只启动、不占 3080，验证装配
 
 ---
 
+## 客户端页面为什么需要一个"生成步骤"
+
+如果你要改「专家团」页，先读这段，它省下的是我踩过的三类坑。常驻客户端包有三条硬契约，全部由 `tools/build-client.mjs` 生成的包裹层满足，`test/client-bundle.test.js` 会在沙箱里**执行生成物**逐条断言：
+
+| 契约 | 违反后的现象 |
+|---|---|
+| 必须是 **classic script 并自注册**（`window.__ModuleLoader__.load({ id, factory })`），导出带 `apply`/`inject` 的插件形状 | 脚本能求值但什么都不注册；宿主报 `loaded without registering`，**同一条 combo 里所有客户端插件一起挂**，整个设置面板消失 |
+| **React 走工厂的 `require`** | runner 只把 `React` 注入**动态**半区；常驻 bundle 里当全局读 → 插槽内抛 `React is not defined` |
+| **`inject` 必须含 `slots`** | shell 在插件加载时立刻调用 `apply`，可能早于 slot 系统 → 静默什么都不注册（连报错都没有） |
+
+还有一条不是契约但是事实：**没有 `host.call`**。那是动态 runner 的私有 RPC，常驻客户端包够不着；要用 RPC 就得在 host 组合里注册一个 remote 服务 —— 为一个只读目录页不值得，所以花名册在构建时内联进 bundle（约 69 KB JSON）。
+
 ## 已知限制
 
 1. **只支持 in-process provider**（`spawn` / `fork`）。进程外 provider 无法兑现 persona。
@@ -210,7 +222,7 @@ npm test               # 97 项断言：解析 / 索引 / 目录 / 转义 / 剧�
 node tools/audit.mjs   # 语料与成本的实测报告（角色数、目录开销、需转义的文件、剧本清单）
 node tools/vendor.mjs --from <checkout|git URL>   # 刷新随包快照并更新 data/VENDOR.md
 npm run emit-eval      # 重新生成 tmp/agency-core.mjs（会话内验证用，不随包发布）
-npm run build:client   # 由 src/client.js 生成 lib/client.js（改完客户端页面必须跑）
+npm run build:client   # 由 src/client.js + 语料生成 lib/client.js（改完客户端页面必须跑）
 ```
 
 目录结构：
