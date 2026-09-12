@@ -1,0 +1,19 @@
+# NOTICE
+
+## This package
+
+dsh-agency-agents — MIT, see [LICENSE](LICENSE).
+
+## Bundled third-party content
+
+`data/agency-agents-zh/` is an unmodified snapshot of the role library
+published at <https://github.com/jnMetaCode/agency-agents-zh>, which is also
+MIT licensed.
+
+- upstream commit: see `data/VENDOR.md` (currently `e00aed9`)
+- upstream LICENSE: preserved at `data/agency-agents-zh/LICENSE`
+- refresh procedure: `node tools/vendor.mjs --from <checkout|git URL>`
+
+The snapshot is redistributed under the upstream MIT terms; the upstream
+copyright notice and permission notice are retained beside the content as
+required.

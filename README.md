@@ -165,5 +165,8 @@ src/index.js         配置解析与 apply（组合装配）
 
 ## 许可
 
-本插件代码 MIT。`data/agency-agents-zh/` 是上游 MIT 内容的快照，上游 `LICENSE` 随内容一并保留，
-来源与 commit 记录在 `data/VENDOR.md`。
+本插件代码 MIT（见根目录 `LICENSE`）。
+
+`data/agency-agents-zh/` 是上游 [agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh) 的 MIT 内容快照：
+上游 `LICENSE` 随内容保留在 `data/agency-agents-zh/LICENSE`，来源与 commit 记录在 `data/VENDOR.md`，
+第三方内容的归属与再分发说明见 [`NOTICE`](NOTICE)。

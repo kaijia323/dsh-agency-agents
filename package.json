@@ -35,6 +35,7 @@
     "data/agency-agents-zh/LICENSE",
     "data/VENDOR.md",
     "cordis.patch.yml",
+    "NOTICE",
     "README.md"
   ],
   "engines": {
